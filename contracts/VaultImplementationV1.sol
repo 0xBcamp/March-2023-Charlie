@@ -6,6 +6,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+import "./Interfaces/IVaultFactory.sol";
+
 contract VaultImplementation is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     address public vaultFactory;
     address public keeper;
@@ -20,28 +22,36 @@ contract VaultImplementation is Initializable, OwnableUpgradeable, UUPSUpgradeab
         address defaultCollateral;
     }
 
-    mapping(address => TraderProps) traders;
+    mapping(address => TraderProps) public traders;
 
-    event Trader(address indexed trader, bool inverseCopyTrade, uint16 copySizeBPS, address defaultCollateral);
+    event Trader(address  addressThis, address caller, bytes32 name, address trader, bool inverseCopyTrade, uint16 copySizeBPS, address defaultCollateral);
 
     modifier onlyKeeper() {
         require(msg.sender == keeper, "Only keeper");
         _;
     }
+    
+    modifier onlyVaultFactory() {
+        require(vaultFactory != address(0) && msg.sender == vaultFactory, "Only keeper");
+        _;
+    }
 
     receive() external payable {}
 
-    function initialize(bytes32 _name, address _keeper, address _vaultFactory, uint256 _managementFee) public initializer {
+    function initialize() public initializer {
+        __Ownable_init();
+    }
+
+    function setParams(bytes32 _name, address _keeper, address _vaultFactory, uint256 _managementFee) public onlyVaultFactory{
         name = _name;
         keeper = _keeper;
         vaultFactory = _vaultFactory;
         MANAGEMENT_FEE = _managementFee;
-        __Ownable_init();
     }
 
     function modifyTrader(address trader, bool inverseCopyTrade, uint16 copySizeBPS, address defaultCollateral) public onlyOwner {
         traders[trader] = TraderProps(inverseCopyTrade, copySizeBPS, defaultCollateral);
-        emit Trader(trader, inverseCopyTrade, copySizeBPS, defaultCollateral);
+        IVaultFactory(vaultFactory).fireVaultEvent(msg.sender, name, trader, inverseCopyTrade, copySizeBPS, defaultCollateral);
     }
 
     function addTrader(address trader, bool inverseCopyTrade, uint16 copySizeBPS, address defaultCollateral) public onlyOwner {
@@ -50,12 +60,12 @@ contract VaultImplementation is Initializable, OwnableUpgradeable, UUPSUpgradeab
         traderProps.inverseCopyTrade = inverseCopyTrade;
         traderProps.copySizeBPS = copySizeBPS;
         traderProps.defaultCollateral = defaultCollateral;
-        emit Trader(trader, inverseCopyTrade, copySizeBPS, defaultCollateral);
+        IVaultFactory(vaultFactory).fireVaultEvent(msg.sender, name, trader, inverseCopyTrade, copySizeBPS, defaultCollateral);
     }
 
     function deleteTrader(address trader) public onlyOwner {
         delete traders[trader];
-        emit Trader(trader, false, 0, address(0));
+        IVaultFactory(vaultFactory).fireVaultEvent(msg.sender, name, trader, false, 0, address(0));
     }
 
     function callContract(address contractToCall, bytes calldata data, address token, uint256 amount) public payable onlyKeeper {
